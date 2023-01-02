@@ -1,15 +1,11 @@
 use std::{fs, env};
-use std::time;
 use std::collections::HashMap;
 use std::{process::Command, path::{Path, PathBuf}};
 use std::io::{self, ErrorKind};
 use std::error::Error;
-
 use core_foundation::string::CFString;
 use core_foundation::propertylist::{CFPropertyList, CFPropertyListSubClass};
-
-use chrono::{self, Timelike, NaiveTime, Local};
-
+use chrono::{self, Timelike, NaiveTime, Local, Duration};
 use serde::{Deserialize, Serialize};
 
 const TEMP_AGENT: &str = "com.temp-auto-selfcontrol-rs.plist";
@@ -18,8 +14,6 @@ const MAIN_AGENT: &str = "com.main-auto-selfcontrol-rs.plist";
 pub fn run(config: &Config, arg: &str) -> Result<(), Box<dyn Error>> {
     match arg {
         "deploy" => {
-            config.remove_agent(TEMP_AGENT)?;
-            config.remove_agent(MAIN_AGENT)?;
             /*
             install a launch agent which calls execute on this binary at the beginning
             of each block
@@ -37,40 +31,45 @@ pub fn run(config: &Config, arg: &str) -> Result<(), Box<dyn Error>> {
                 &schedule,
             );
             config.install_agent(MAIN_AGENT, &plist)?;
+
             // we may be now be in an active block- so call execute on this binary
             let this_binary = std::env::current_exe()?;
             Command::new(&this_binary)
                 .arg("execute")
                 .output()?;
             Ok(())
-
         },
 
         "execute" => {
-            config.remove_agent(TEMP_AGENT)?;
-            // if we aren't in an active block, return
-            let active_block = config.block_is_active();
-            if active_block == None {
+            let block = config.block_is_active();
+            if block == None {
+            // not within an active block
                 return Ok(());
             }
-            // we're in a active block
-            let (_, block_end) = active_block.unwrap();
+            let (_, block_end) = block.unwrap();
+
+            let now = Local::now().time();
+            let time_to_block_end = duration_between(&now, block_end);
+
             let sc_active = SC_is_active(&config.self_control_path)?;
-            // self control is not active- start self control for the duration of this block
             if sc_active == None {
-                SC_begin_block(&config.self_control_path, block_end)?;
+            // sc is not active, start sc for duration of block
+                SC_begin_block(&config.self_control_path, time_to_block_end)?;
                 return Ok(());
             }
-            // self control is active
+
             let sc_end = sc_active.unwrap();
-            // self control will finish after this block ends, so return
-            if sc_end > *block_end {
+            let time_to_sc_end = duration_between(&now, &sc_end);
+
+            if time_to_sc_end >= time_to_block_end {
+            // sc finishes after block ends, do nothing
                 return Ok(());
             }
+
             /*
             self control finishes before this current block ends
-            there is no sc-cli option to extend the block, so we need to
-            install a launch agent to call execute on this binary when sc ends 
+            there is no sc-cli option to extend the block, so we need to install a launch agent
+            to call execute on this binary when sc ends 
             */
             let command = env::current_exe()?;
             let command = command.to_str().ok_or_else(|| io::Error::new(ErrorKind::Other, "invalid path to binary"))?;
@@ -78,9 +77,8 @@ pub fn run(config: &Config, arg: &str) -> Result<(), Box<dyn Error>> {
             // we have only minute precision to schedule the launch agent
             let calendar = vec![sc_end.with_second(0).unwrap() + chrono::Duration::minutes(1)];
             let schedule = LaunchAgentSchedule::Calendar(&calendar);
-
             let plist = build_launch_agent_plist(
-                MAIN_AGENT,
+                TEMP_AGENT,
                 command,
                 &args,
                 &schedule,
@@ -101,6 +99,13 @@ pub fn run(config: &Config, arg: &str) -> Result<(), Box<dyn Error>> {
 
 }
 
+fn duration_between(start: &NaiveTime, end: &NaiveTime) -> Duration {
+    let dif = *end - *start;
+    match *start < *end {
+        true => dif,
+        false => Duration::hours(24) + dif, 
+    }
+} 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -166,20 +171,15 @@ impl Config {
             .next()
     }
     fn remove_agent(&self, name: &str) -> Result<(), Box<dyn Error>> {
-        /*
-        removing the plist will automatically deactivate the launch agent
-        */
-        let path = Path::new(&self.launch_agents_path).join(name);
-        match std::fs::remove_file(path) {
-            Ok(_) => Ok(()),
-            Err(e) => if let ErrorKind::NotFound = e.kind() {
-                Ok(())
-            } else {
-                    Err(Box::new(e))
-                }
-        }
+        Command::new("launchctl")
+            .arg("remove")
+            .arg(&name)
+            .output()?;
+        Ok(())
     }
+    // todo: if a temp agent tries to install another temp agent it will fail
     fn install_agent(&self, name: &str, plist: &str) -> Result<(), Box<dyn Error>> {
+        self.remove_agent(name)?;
         /*
         writes plist to launch agents folder then loads it
         if plist with same name exits, its overwrites it
@@ -229,7 +229,7 @@ r#"    <key>ProgramArguments</key>
 
 enum LaunchAgentSchedule<'a> {
     Calendar(&'a Vec<NaiveTime>), 
-    Periodic(time::Duration), 
+    Periodic(Duration), 
 }
 fn build_plist_schedule(schedule: &LaunchAgentSchedule) -> String {
     match schedule {
@@ -237,7 +237,7 @@ fn build_plist_schedule(schedule: &LaunchAgentSchedule) -> String {
         format!(
 r#"    <key>StartInterval</key>
         <integer>{}<\integer>"#
-        ,duration.as_secs())
+        ,duration.num_seconds())
         },
 
         LaunchAgentSchedule::Calendar(start_times) => {
@@ -286,13 +286,8 @@ extern {
     fn CFPreferencesAppSynchronize( applicationID: CFString) -> bool;
 }
 #[allow(non_snake_case)]
-fn SC_begin_block(SC_path: &str, end: &NaiveTime) -> Result<(), Box<dyn Error>> {
-    // set how long self control will be active for 
-    let now = Local::now().time();
-    let duration = match now < *end {
-        true =>  *end - now,
-        false => now - *end,
-    };
+fn SC_begin_block(SC_path: &str, duration: chrono::Duration) -> Result<(), Box<dyn Error>> {
+    // set block duration of selfcontrol
     let mins = (duration.num_seconds() as f64 / 60.0).ceil() as u32;
     unsafe {
         CFPreferencesSetAppValue(
@@ -359,15 +354,18 @@ fn SC_is_active(SC_path: &str) -> Result<Option<NaiveTime>, Box<dyn Error>> {
     let is_active = settings_map
         .get("BlockIsRunning")
         .ok_or_else(|| io::Error::new(ErrorKind::InvalidData, "missing settings key"))?;
+
     // self control is not active
     if is_active == "0" {
         return Ok(None);
     }
+
     // self control is active 
     let end_date = settings_map
         .get("BlockEndDate")
         .ok_or_else(|| io::Error::new(ErrorKind::InvalidData, "missing settings key"))?
         .to_string();
+
     // our date value has weird format- "\"2022-12-3022:25:27+0000\"" so format it
     let end_date = end_date.replace("\"", "");
     let end_date = &end_date[10..end_date.chars().count()-5];
