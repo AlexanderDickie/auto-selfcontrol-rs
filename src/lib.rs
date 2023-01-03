@@ -54,7 +54,7 @@ pub fn run(config: &Config, arg: &str) -> Result<(), Box<dyn Error>> {
             let sc_active = SC_is_active(&config.self_control_path)?;
             if sc_active == None {
             // sc is not active, start sc for duration of block
-                SC_begin_block(&config.self_control_path, time_to_block_end)?;
+                insist_SC_begin_block(&config.self_control_path, *block_end)?;
                 return Ok(());
             }
 
@@ -106,6 +106,31 @@ fn duration_between(start: &NaiveTime, end: &NaiveTime) -> Duration {
         false => Duration::hours(24) + dif, 
     }
 } 
+
+#[allow(non_snake_case)]
+fn insist_SC_begin_block(path: &str, end: NaiveTime) -> Result<(), Box<dyn Error>> {
+    /*
+    self control requires the user to input their password to install a helper tool,
+    if the user refuses, start sc again (the helper prompt will immediately  reappear)
+    */
+    loop {
+        let now = Local::now().time();
+        let duration = duration_between(&now, &end);
+
+        match SC_begin_block(path, duration) {
+            Ok(_) => return Ok(()),
+
+            Err(e) => {
+                if e.to_string().contains("Authorization cancelled") {
+                    continue;
+                }
+                return Err(e);
+            }
+        }
+    }
+
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -303,10 +328,16 @@ fn SC_begin_block(SC_path: &str, duration: chrono::Duration) -> Result<(), Box<d
         .arg("start")
         .output()?;
     let stderr = String::from_utf8(output.stderr)?;
+    // check if user refused helper installation
+    if stderr.contains("Authorization cancelled") {
+        return Err(Box::new(io::Error::new(ErrorKind::PermissionDenied, "Authorization cancelled")));
+    }
+    // check for other non success message
     if !stderr.contains(&"INFO: Block successfully added.") {
         return Err(Box::new(io::Error::new(ErrorKind::NotFound, "no success msg in self control stderr")));
-    } 
-    Ok(())
+    } else {
+        Ok(())
+    }
 }
 
 #[allow(non_snake_case)]
@@ -427,8 +458,7 @@ r#"{
     #[test]
     fn SC_begin_block_generic() {
         let now = Local::now().time();
-        let future = now + chrono::Duration::minutes(2);
-        SC_begin_block(SC_PATH, &future);
+        SC_begin_block(SC_PATH, Duration::minutes(2)).unwrap();
     }
 
     #[test]
@@ -462,7 +492,7 @@ r#"    <key>ProgramArguments</key>
         let command: &str = "cmd".into();
         let args = vec!["arg1".to_string(), "arg2".to_string()];
         let start_date = Local::now().naive_local();
-        let schedle = LaunchAgentSchedule::Periodic(time::Duration::from_secs(60 * 5));
+        let schedle = LaunchAgentSchedule::Periodic(Duration::seconds(60 * 5));
 
         let output = build_launch_agent_plist(
             "name".into(),
@@ -490,5 +520,12 @@ r#"    <key>ProgramArguments</key>
             &schedle,
         );
         println!("{}", output); 
+    }
+
+    #[test]
+    fn persevere_SC_begin_block_generic() {
+        let now = Local::now().time();
+        let end = now + chrono::Duration::minutes(2);
+        insist_SC_begin_block(SC_PATH, end).unwrap();
     }
 }
