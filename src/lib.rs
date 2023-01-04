@@ -49,17 +49,17 @@ pub fn run(config: &Config, arg: &str) -> Result<(), Box<dyn Error>> {
             let (_, block_end) = block.unwrap();
 
             let now = Local::now().time();
-            let time_to_block_end = duration_between(&now, block_end);
+            let time_to_block_end = duration_between(now, block_end);
 
             let sc_active = SC_is_active(&config.self_control_path)?;
             if sc_active == None {
             // sc is not active, start sc for duration of block
-                insist_SC_begin_block(&config.self_control_path, *block_end)?;
+                insist_SC_begin_block(&config.self_control_path, block_end)?;
                 return Ok(());
             }
 
             let sc_end = sc_active.unwrap();
-            let time_to_sc_end = duration_between(&now, &sc_end);
+            let time_to_sc_end = duration_between(now, sc_end);
 
             if time_to_sc_end >= time_to_block_end {
             // sc finishes after block ends, do nothing
@@ -99,9 +99,9 @@ pub fn run(config: &Config, arg: &str) -> Result<(), Box<dyn Error>> {
 
 }
 
-fn duration_between(start: &NaiveTime, end: &NaiveTime) -> Duration {
-    let dif = *end - *start;
-    match *start < *end {
+fn duration_between(start: NaiveTime, end: NaiveTime) -> Duration {
+    let dif = end - start;
+    match start < end {
         true => dif,
         false => Duration::hours(24) + dif, 
     }
@@ -115,7 +115,7 @@ fn insist_SC_begin_block(path: &str, end: NaiveTime) -> Result<(), Box<dyn Error
     */
     loop {
         let now = Local::now().time();
-        let duration = duration_between(&now, &end);
+        let duration = duration_between(now, end);
 
         match SC_begin_block(path, duration) {
             Ok(_) => return Ok(()),
@@ -181,7 +181,7 @@ impl Config {
             .map(|block| block.0)
             .collect()
     }
-    fn block_is_active(&self) ->Option<&(NaiveTime, NaiveTime)> {
+    fn block_is_active(&self) -> Option<(NaiveTime, NaiveTime)> {
         let now = Local::now().time();
         self.blocks
             .iter()
@@ -194,6 +194,7 @@ impl Config {
                 }
             })
             .next()
+            .copied()
     }
     fn remove_agent(&self, name: &str) -> Result<(), Box<dyn Error>> {
         Command::new("launchctl")
