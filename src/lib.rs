@@ -153,14 +153,16 @@ impl Config {
         } else if blocks.len() == 1 {
             return Ok(config);
         }
+
         // we should have at most one block (start, end) where start >= end, eg a block 5pm to 2am 
         let reversed = blocks.iter().filter(|block| block.0 >= block.1);
         if reversed.count() > 1 {
             return Err(Box::new(io::Error::new(ErrorKind::InvalidInput, "config.json contains more than
                 one block with start time >= end time")));
         }
-        // no pairs of blocks should overlap
+
         blocks.sort_by(|a, b| (&a.0).partial_cmp(&b.0).unwrap());
+        // no pairs of blocks should overlap
         // if the last block crosses midnight, check if it overlaps with first block
         let first_block = blocks.first().unwrap();
         let last_block = blocks.last().unwrap();
@@ -173,6 +175,7 @@ impl Config {
             return Err(Box::new(io::Error::new(ErrorKind::InvalidInput, "config.json contains an overlapping
                 block")));
         }
+
         Ok(config)
     }
     fn get_block_starts(&self) -> Vec<NaiveTime> {
@@ -201,7 +204,17 @@ impl Config {
             .arg("remove")
             .arg(&name)
             .output()?;
-        Ok(())
+
+        match fs::remove_file(format!("{}/{}", self.launch_agents_path, name)) {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                if e.kind() == ErrorKind::NotFound {
+                    Ok(())
+                } else {
+                    Err(Box::new(e))
+                }
+            }
+        }
     }
     // todo: if a temp agent tries to install another temp agent it will fail
     fn install_agent(&self, name: &str, plist: &str) -> Result<(), Box<dyn Error>> {
@@ -212,6 +225,7 @@ impl Config {
         */
         let path = Path::new(&self.launch_agents_path).join(name);
         fs::write(&path, plist)?;
+
         Command::new("launchctl")
             .arg("load")
             .arg(&path)
