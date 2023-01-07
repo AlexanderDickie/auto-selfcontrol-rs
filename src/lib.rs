@@ -163,18 +163,12 @@ impl Config {
             return Ok(config);
         }
 
-        // we should have at most one block (start, end) where start >= end, eg a block 5pm to 2am 
-        let reversed = blocks.iter().filter(|block| block.0 >= block.1);
-        if reversed.count() > 1 {
-            return Err(ManyBlocksCrossMidnight.into());
-        }
-
         blocks.sort_by(|a, b| (&a.0).partial_cmp(&b.0).unwrap());
         // no pairs of blocks should overlap
         // if the last block crosses midnight, check if it overlaps with first block
         let first_block = blocks.first().unwrap();
         let last_block = blocks.last().unwrap();
-        if last_block.1 < first_block.0 && last_block.1 > last_block.0 {
+        if last_block.1 < last_block.0 && last_block.1 >= first_block.0 {
             return Err(OverlappingBlocks.into());
         }
         let overlapping = blocks.windows(2).filter(|pair| pair[0].1 >= pair[1].0);
@@ -468,14 +462,12 @@ impl Error for InvalidProgramArgument {}
 enum ConfigError {
     NoBlocks,
     OverlappingBlocks,
-    ManyBlocksCrossMidnight,
 }
 impl Display for ConfigError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             ConfigError::NoBlocks => write!(f, "no blocks specified in config"),
             ConfigError::OverlappingBlocks => write!(f, "overlapping blocks specified in config"),
-            ConfigError::ManyBlocksCrossMidnight => write!(f, "more than one block crosses midnight"),
         }
     }
 }
