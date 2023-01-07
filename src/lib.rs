@@ -1,3 +1,4 @@
+use std::fmt::{self, Display};
 use std::{fs, env};
 use std::collections::HashMap;
 use std::{process::Command, path::{Path, PathBuf}};
@@ -8,10 +9,13 @@ use core_foundation::propertylist::{CFPropertyList, CFPropertyListSubClass};
 use chrono::{self, Timelike, NaiveTime, Local, Duration};
 use serde::{Deserialize, Serialize};
 
+
 const TEMP_AGENT: &str = "com.temp-auto-selfcontrol-rs.plist";
 const MAIN_AGENT: &str = "com.main-auto-selfcontrol-rs.plist";
 
-pub fn run(config: &Config, arg: &str) -> Result<(), Box<dyn Error>> {
+type ResultE<T> = std::result::Result<T, Box<dyn Error>>;
+
+pub fn run(config: &Config, arg: &str) -> ResultE<()> {
     match arg {
         "deploy" => {
             /*
@@ -29,6 +33,7 @@ pub fn run(config: &Config, arg: &str) -> Result<(), Box<dyn Error>> {
                 command,
                 &args,
                 &schedule,
+                true,
             );
             config.install_agent(MAIN_AGENT, &plist)?;
 
@@ -82,6 +87,7 @@ pub fn run(config: &Config, arg: &str) -> Result<(), Box<dyn Error>> {
                 command,
                 &args,
                 &schedule,
+                false,
             );
             config.install_agent(TEMP_AGENT, &plist)?;
 
@@ -93,7 +99,8 @@ pub fn run(config: &Config, arg: &str) -> Result<(), Box<dyn Error>> {
             Ok(())
         },
         _ => {
-            Err(Box::new(io::Error::new(ErrorKind::InvalidInput, "invalid argument")))
+            println!("{}", InvalidProgramArgument);
+            return Err(InvalidProgramArgument.into());
         }
     }
 
@@ -108,7 +115,7 @@ fn duration_between(start: NaiveTime, end: NaiveTime) -> Duration {
 } 
 
 #[allow(non_snake_case)]
-fn insist_SC_begin_block(path: &str, end: NaiveTime) -> Result<(), Box<dyn Error>> {
+fn insist_SC_begin_block(path: &str, end: NaiveTime) -> ResultE<()> {
     /*
     self control requires the user to input their password to install a helper tool,
     if the user refuses, start sc again (the helper prompt will immediately  reappear)
@@ -120,11 +127,10 @@ fn insist_SC_begin_block(path: &str, end: NaiveTime) -> Result<(), Box<dyn Error
         match SC_begin_block(path, duration) {
             Ok(_) => return Ok(()),
 
-            Err(e) => {
-                if e.to_string().contains("Authorization cancelled") {
-                    continue;
-                }
-                return Err(e);
+            Err(e) => match e {
+                SelfControlError::UserCancelledHelper => continue,
+                _ => return Err(e.into()),
+
             }
         }
     }
@@ -141,15 +147,18 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn build(config_path: &PathBuf) -> Result<Self, Box<dyn Error>> {
+    pub fn build(config_path: &PathBuf) -> ResultE<Self> {
+        use ConfigError::*;
         let config_file = fs::read_to_string(config_path)?;
         let mut config: Config = serde_json::from_str(&config_file)?;
         /*
         Check sequence of blocks are valid
         */
+
+        // exit on 0 blocks, 1 block will have valid logic nomatter
         let blocks = &mut config.blocks;
         if blocks.len() == 0 {
-            return Err(Box::new(io::Error::new(ErrorKind::InvalidInput, "config.json contains 0 blocks")));
+            return Err(NoBlocks.into());
         } else if blocks.len() == 1 {
             return Ok(config);
         }
@@ -157,8 +166,7 @@ impl Config {
         // we should have at most one block (start, end) where start >= end, eg a block 5pm to 2am 
         let reversed = blocks.iter().filter(|block| block.0 >= block.1);
         if reversed.count() > 1 {
-            return Err(Box::new(io::Error::new(ErrorKind::InvalidInput, "config.json contains more than
-                one block with start time >= end time")));
+            return Err(ManyBlocksCrossMidnight.into());
         }
 
         blocks.sort_by(|a, b| (&a.0).partial_cmp(&b.0).unwrap());
@@ -167,13 +175,11 @@ impl Config {
         let first_block = blocks.first().unwrap();
         let last_block = blocks.last().unwrap();
         if last_block.1 < first_block.0 && last_block.1 > last_block.0 {
-            return Err(Box::new(io::Error::new(ErrorKind::InvalidInput, "config.json contains overlapping
-                blocks")));
+            return Err(OverlappingBlocks.into());
         }
         let overlapping = blocks.windows(2).filter(|pair| pair[0].1 >= pair[1].0);
         if overlapping.count() > 0 {
-            return Err(Box::new(io::Error::new(ErrorKind::InvalidInput, "config.json contains an overlapping
-                block")));
+            return Err(OverlappingBlocks.into());
         }
 
         Ok(config)
@@ -199,7 +205,7 @@ impl Config {
             .next()
             .copied()
     }
-    fn remove_agent(&self, name: &str) -> Result<(), Box<dyn Error>> {
+    fn remove_agent(&self, name: &str) -> ResultE<()> {
         Command::new("launchctl")
             .arg("remove")
             .arg(&name)
@@ -217,7 +223,7 @@ impl Config {
         }
     }
     // todo: if a temp agent tries to install another temp agent it will fail
-    fn install_agent(&self, name: &str, plist: &str) -> Result<(), Box<dyn Error>> {
+    fn install_agent(&self, name: &str, plist: &str) -> ResultE<()> {
         self.remove_agent(name)?;
         /*
         writes plist to launch agents folder then loads it
@@ -271,8 +277,8 @@ enum LaunchAgentSchedule<'a> {
     Calendar(&'a Vec<NaiveTime>), 
     Periodic(Duration), 
 }
-fn build_plist_schedule(schedule: &LaunchAgentSchedule) -> String {
-    match schedule {
+fn build_plist_schedule(schedule: &LaunchAgentSchedule, run_at_load: bool) -> String {
+    let timings = match schedule {
         LaunchAgentSchedule::Periodic(duration) => {
         format!(
 r#"    <key>StartInterval</key>
@@ -294,8 +300,20 @@ r#"    <dict>
                 .collect::<Vec<String>>()
                 .join("\n");
 
+
 "    <key>StartCalendarInterval</key>\n".to_string() + &start_times
         }
+    };
+
+    // if agent is scheduled to execute when computer is shut down, it will not when next online- run at load 
+    // to mitigate this
+    if run_at_load {
+        return timings +
+&r#"
+    <key>RunAtLoad</key>
+    <true/>"#.to_string();
+    } else {
+    return timings;
     }
 }
 
@@ -308,13 +326,14 @@ fn build_launch_agent_plist(
     name: &str,
     command: &str,
     args: &Vec<&str>,
-    schedule: &LaunchAgentSchedule)
+    schedule: &LaunchAgentSchedule,
+    run_at_load: bool)
     -> String 
 {
     let parts = vec![
         build_plist_header(name),
         build_plist_commands(command, args),
-        build_plist_schedule(schedule),
+        build_plist_schedule(schedule, run_at_load),
         build_plist_footer(),
     ];
     parts.join("\n")
@@ -325,8 +344,11 @@ extern {
     fn CFPreferencesSetAppValue(key: CFString, value: CFPropertyList, applicationID: CFString);
     fn CFPreferencesAppSynchronize( applicationID: CFString) -> bool;
 }
+
+
 #[allow(non_snake_case)]
-fn SC_begin_block(SC_path: &str, duration: chrono::Duration) -> Result<(), Box<dyn Error>> {
+fn SC_begin_block(SC_path: &str, duration: chrono::Duration) -> Result<(), SelfControlError> {
+    use SelfControlError::*;
     // set block duration of selfcontrol
     let mins = (duration.num_seconds() as f64 / 60.0).ceil() as u32;
     unsafe {
@@ -341,22 +363,24 @@ fn SC_begin_block(SC_path: &str, duration: chrono::Duration) -> Result<(), Box<d
     // start self control
     let output = Command::new(SC_path)
         .arg("start")
-        .output()?;
-    let stderr = String::from_utf8(output.stderr)?;
+        .output()
+        .map_err(|e| SelfControlError::CommandError(e))?;
+    let stderr = String::from_utf8(output.stderr)
+        .map_err(|e| SelfControlError::ParseError(e))?;
     // check if user refused helper installation
     if stderr.contains("Authorization cancelled") {
-        return Err(Box::new(io::Error::new(ErrorKind::PermissionDenied, "Authorization cancelled")));
+        return Err(UserCancelledHelper.into());
     }
     // check for other non success message
     if !stderr.contains(&"INFO: Block successfully added.") {
-        return Err(Box::new(io::Error::new(ErrorKind::NotFound, "no success msg in self control stderr")));
+        return Err(NoSuccessMsg.into());
     } else {
         Ok(())
     }
 }
 
 #[allow(non_snake_case)]
-fn SC_parse_print_settings(stderr: &str) -> Result<HashMap<String, String>, Box<dyn Error>> {
+fn SC_parse_print_settings(stderr: &str) -> ResultE<HashMap<String, String>> {
     /* 
     parse the settings dictionary from the output of calling print-settings on selfcontrol
     */
@@ -375,11 +399,11 @@ fn SC_parse_print_settings(stderr: &str) -> Result<HashMap<String, String>, Box<
         let mut pairs = line.split("=");
         let key = pairs
             .next()
-            .ok_or_else(|| "invalid output of print-settings")?
+            .ok_or(SelfControlCliError::InvalidPlistFormat)?
             .to_owned();
         let value = pairs
             .next()
-            .ok_or_else(|| "invalid output of print-settings")?
+            .ok_or(SelfControlCliError::InvalidPlistFormat)?
             .to_owned();
         settings_map.insert(key, value);
     }
@@ -387,7 +411,7 @@ fn SC_parse_print_settings(stderr: &str) -> Result<HashMap<String, String>, Box<
 }
 
 #[allow(non_snake_case)]
-fn SC_is_active(SC_path: &str) -> Result<Option<NaiveTime>, Box<dyn Error>> {
+fn SC_is_active(SC_path: &str) -> ResultE<Option<NaiveTime>> {
     /*
     checks if self control is currently active, if so returns the time it will end
     */
@@ -399,7 +423,7 @@ fn SC_is_active(SC_path: &str) -> Result<Option<NaiveTime>, Box<dyn Error>> {
 
     let is_active = settings_map
         .get("BlockIsRunning")
-        .ok_or_else(|| io::Error::new(ErrorKind::InvalidData, "missing settings key"))?;
+        .ok_or(SelfControlCliError::MisingPlistKey)?;
 
     // self control is not active
     if is_active == "0" {
@@ -409,8 +433,7 @@ fn SC_is_active(SC_path: &str) -> Result<Option<NaiveTime>, Box<dyn Error>> {
     // self control is active 
     let end_date = settings_map
         .get("BlockEndDate")
-        .ok_or_else(|| io::Error::new(ErrorKind::InvalidData, "missing settings key"))?
-        .to_string();
+        .ok_or(SelfControlCliError::MisingPlistKey)?;
 
     // our date value has weird format- "\"2022-12-3022:25:27+0000\"" so format it
     let end_date = end_date.replace("\"", "");
@@ -418,6 +441,85 @@ fn SC_is_active(SC_path: &str) -> Result<Option<NaiveTime>, Box<dyn Error>> {
     let end_date = NaiveTime::parse_from_str(end_date, "%H:%M:%S")?;
     Ok(Some(end_date))
 }
+
+
+// Errors 
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+#[derive(Debug)]
+pub struct InvalidProgramArgument;
+impl Display for InvalidProgramArgument {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    write!(f,  
+"Invalid Argument, valid arguments are:
+
+deploy -> install auto-selfcontrol-rs's daemons (launch agents) with respect to your config file. If the launch agents are already installed, they will be removed and replaced. 
+
+execute -> this command is called by auto-selfcontrol-rs's launch agents. It is not intended to be called by the user, 
+but doing so will check if we are currently in a block, and if so will activate SelfControlApp for the duration of the block (+ handles edge cases such as we're in a block, but self control is active but will finish before block end).
+
+remove_agents -> remove auto-selfcontrol-rs's launch agents. ")
+    }
+}
+impl Error for InvalidProgramArgument {}
+
+
+#[derive(Debug)]
+enum ConfigError {
+    NoBlocks,
+    OverlappingBlocks,
+    ManyBlocksCrossMidnight,
+}
+impl Display for ConfigError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ConfigError::NoBlocks => write!(f, "no blocks specified in config"),
+            ConfigError::OverlappingBlocks => write!(f, "overlapping blocks specified in config"),
+            ConfigError::ManyBlocksCrossMidnight => write!(f, "more than one block crosses midnight"),
+        }
+    }
+}
+impl Error for ConfigError {}
+
+
+#[derive(Debug)]
+enum SelfControlError {
+    UserCancelledHelper,
+    NoSuccessMsg,
+    CommandError(std::io::Error),
+    ParseError(std::string::FromUtf8Error)
+}
+impl Display for SelfControlError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SelfControlError::UserCancelledHelper => write!(f, "User cancelled helper authorization"),
+            SelfControlError::NoSuccessMsg => write!(f, "no success message in SelfControl stderr output"),
+            SelfControlError::CommandError(e) => write!(f, "error executing self control binary: {}", e),
+            SelfControlError::ParseError(e) => write!(f, "error parsing self control output: {}", e),
+        }
+    }
+}
+impl Error for SelfControlError {}
+
+
+#[derive(Debug)]
+enum SelfControlCliError {
+    InvalidPlistFormat,
+    MisingPlistKey
+}
+impl Display for SelfControlCliError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SelfControlCliError::MisingPlistKey => write!(f, "missing key in SelfControl cli plist"),
+            SelfControlCliError::InvalidPlistFormat => write!(f, "invalid SelfControl cli plist"),
+        }
+    }
+}
+impl Error for SelfControlCliError {}
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+
 
 /*
 many of these tests need to be manually inspected by looking at the consequent behavior of the
@@ -501,6 +603,7 @@ r#"    <key>ProgramArguments</key>
             assert_eq!(pair.0, pair.1);
         }
     }
+
 
     #[test]
     fn build_launch_agent_periodic() {

@@ -4,10 +4,14 @@ use std::error::Error;
 use std::fs;
 
 mod lib;
-use lib::*;
+use lib::{
+    Config,
+    run,
+    InvalidProgramArgument,
+};
 
 fn main() -> Result<(), Box<dyn Error>>{
-    // create the config directory if it doesn't exist
+
     let home_dir = env::var_os("HOME")
         .ok_or_else(|| "HOME environment variable not set")?;
     let home_dir = PathBuf::from(home_dir.to_str().unwrap());
@@ -17,7 +21,7 @@ fn main() -> Result<(), Box<dyn Error>>{
         .join("auto-self-control-rs/");
     fs::create_dir_all(&config_dir)?;
 
-    // write the config file if it doesn't exist
+    // write the example config file if it doesn't exist
     let config_path = config_dir.join("config.json");
     if !config_path.exists() {
         let example_config = build_example_config(home_dir);
@@ -26,12 +30,14 @@ fn main() -> Result<(), Box<dyn Error>>{
 
     let args = env::args().collect::<Vec<String>>();
     if args.len() != 2 {
-        return Err("incorrect number of arguments".into());
-    }
-    // build config
-    let config = Config::build(&config_path)?;
+        println!("{}", InvalidProgramArgument);
+        return Err(InvalidProgramArgument.into()); 
 
+    }
+
+    let config = Config::build(&config_path)?;
     run(&config, &args[1])?;
+
     Ok(())
 }
 
@@ -54,3 +60,4 @@ r#"{{
     ]
 }}"#, {launch_agents_path.to_str().unwrap()})
 }
+
