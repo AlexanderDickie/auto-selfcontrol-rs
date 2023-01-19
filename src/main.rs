@@ -1,5 +1,5 @@
 use std::env;
-use std::path::PathBuf;
+use std::path::Path;
 use std::error::Error;
 use std::fs;
 
@@ -12,36 +12,37 @@ use lib::{
 
 fn main() -> Result<(), Box<dyn Error>>{
 
+    // find path to config file
     let home_dir = env::var_os("HOME")
         .ok_or_else(|| "HOME environment variable not set")?;
-    let home_dir = PathBuf::from(home_dir.to_str().unwrap());
-
+    let home_dir = Path::new(&home_dir);
     let config_dir = home_dir 
         .join(".config")
         .join("auto-self-control-rs/");
+    // if dir does not exist, create it 
     fs::create_dir_all(&config_dir)?;
 
-    // write the example config file if it doesn't exist
+    // write the example config file if the config file does not exist 
     let config_path = config_dir.join("config.json");
     if !config_path.exists() {
         let example_config = build_example_config(home_dir);
         fs::write(&config_path, example_config)?;
     }
 
+    // parse command line argument, displaying usage on error
     let args = env::args().collect::<Vec<String>>();
     if args.len() != 2 {
         println!("{}", InvalidProgramArgument);
         return Err(InvalidProgramArgument.into()); 
-
     }
 
+    // execute logic
     let config = Config::build(&config_path)?;
     run(&config, &args[1])?;
-
     Ok(())
 }
 
-fn build_example_config(home_dir: PathBuf) -> String {
+fn build_example_config(home_dir: &Path) -> String {
     let launch_agents_path = home_dir.join("Library/LaunchAgents/");
     format!(
 r#"{{

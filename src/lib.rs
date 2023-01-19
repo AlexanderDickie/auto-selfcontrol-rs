@@ -1,7 +1,7 @@
 use std::fmt::{self, Display};
 use std::{fs, env};
 use std::collections::HashMap;
-use std::{process::Command, path::{Path, PathBuf}};
+use std::{process::Command, path::Path};
 use std::io::{self, ErrorKind};
 use std::error::Error;
 use core_foundation::string::CFString;
@@ -147,7 +147,7 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn build(config_path: &PathBuf) -> ResultE<Self> {
+    pub fn build(config_path: &Path) -> ResultE<Self> {
         use ConfigError::*;
         let config_file = fs::read_to_string(config_path)?;
         let mut config: Config = serde_json::from_str(&config_file)?;
