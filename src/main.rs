@@ -63,18 +63,15 @@ fn main() -> Result<(), Box<dyn Error>>{
 
     if matches.get_flag("deploy") {
         lib::deploy(&config)?;
-        return Ok(());
     }
 
     if matches.get_flag("execute") {
         lib::execute(&config)?;
-        return Ok(())
     }
 
     // remove_agents
     if matches.get_flag("remove_agents") {
         lib::remove_agents(&config)?;
-        return Ok(())
     }
 
     Ok(())

@@ -138,7 +138,7 @@ fn insist_SC_begin_block(path: &str, end: NaiveTime) -> ResultE<()> {
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct Config {
-    pub self_control_path: String,
+    self_control_path: String,
     launch_agents_path: String,
     blocks: Vec<(NaiveTime, NaiveTime)>,
 }
