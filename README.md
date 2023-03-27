@@ -28,7 +28,7 @@ The config file contains a path to the SelfControl app and a path to the LaunchA
     
     chmod +x auto-selfcontrol-rs
     
-    ./auto-self-control-rs --write_example_config
+    ./auto-selfcontrol-rs --write_example_config
     
     // now edit the config at ~/.config/auto-selfcontrol-rs/config.json to your liking
     
@@ -42,7 +42,7 @@ The config file contains a path to the SelfControl app and a path to the LaunchA
     
     chmod +x auto-selfcontrol-rs
     
-    ./auto-self-control-rs --write_example_config
+    ./auto-selfcontrol-rs --write_example_config
     
     // now edit the config at ~/.config/auto-selfcontrol-rs/config.json to your liking
     
