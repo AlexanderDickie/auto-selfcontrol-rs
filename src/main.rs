@@ -9,7 +9,7 @@ use clap::{
 };
 
 mod lib;
-use lib::Config;
+use lib::config::{Config};
 
 fn main() -> Result<(), Box<dyn Error>>{
 
@@ -22,7 +22,7 @@ fn main() -> Result<(), Box<dyn Error>>{
             arg!(-e --execute "If we are in currently in an active block, activates SelfControlApp until \
                 the block ends"),
 
-            arg!(--remove_agents "Remove any launch agent installed by this program"),
+            arg!(-r --remove_agents "Remove any launch agent installed by this program"),
 
             arg!(--write_example_config "Writes an example configuration file to \
                 ~/.config/auto-self-control-rs/config.json"),
@@ -48,11 +48,10 @@ fn main() -> Result<(), Box<dyn Error>>{
     let config_dir = home_dir 
         .join(".config")
         .join("auto-self-control-rs/");
-    // if path does not exist, create it 
+    // if path to config does not exist, create it 
     fs::create_dir_all(&config_dir)?;
     let config_path = config_dir.join("config.json");
 
-    // write example config file
     if matches.get_flag("write_example_config") {
         let example_config = build_example_config(home_dir)?;
         fs::write(&config_path, example_config)?;
@@ -60,20 +59,15 @@ fn main() -> Result<(), Box<dyn Error>>{
     }
 
     let config = Config::build(&config_path)?;
-
     if matches.get_flag("deploy") {
         lib::deploy(&config)?;
     }
-
     if matches.get_flag("execute") {
         lib::execute(&config)?;
     }
-
-    // remove_agents
     if matches.get_flag("remove_agents") {
         lib::remove_agents(&config)?;
     }
-
     Ok(())
 }
 
