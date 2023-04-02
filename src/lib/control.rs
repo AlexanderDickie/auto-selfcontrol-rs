@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fmt::{self, Display};
+use std::path::PathBuf;
 use std::process::Command;
 use std::error::Error;
 use core_foundation::string::CFString;
@@ -15,7 +16,7 @@ extern {
     fn CFPreferencesAppSynchronize( applicationID: CFString) -> bool;
 }
 
-fn selfcontrol_begin_block(self_control_path: &str, duration: chrono::Duration) -> Result<(), SelfControlError> {
+fn selfcontrol_begin_block(self_control_path: &PathBuf, duration: chrono::Duration) -> Result<(), SelfControlError> {
     use SelfControlError::*;
     // set block duration of selfcontrol
     let mins = (duration.num_seconds() as f64 / 60.0).ceil() as u32;
@@ -47,7 +48,7 @@ fn selfcontrol_begin_block(self_control_path: &str, duration: chrono::Duration) 
     }
 }
 
-pub fn selfcontrol_insist_begin_block(self_control_path: &str, end: NaiveTime) -> ResultE<()> {
+pub fn selfcontrol_insist_begin_block(self_control_path: &PathBuf, end: NaiveTime) -> ResultE<()> {
     /*
     self control requires the user to input their password to install a helper tool,
     if the user refuses, start sc again (the helper prompt will immediately  reappear)
@@ -99,7 +100,7 @@ fn selfcontrol_parse_settings(stderr: &str) -> Result<HashMap<String, String>, S
     Ok(settings_map)
 }
 
-pub fn selfcontrol_is_active(self_control_path: &str) -> ResultE<Option<NaiveTime>> {
+pub fn selfcontrol_is_active(self_control_path: &PathBuf) -> ResultE<Option<NaiveTime>> {
     /*
     checks if self control is currently active, if so returns the time it will end
     */

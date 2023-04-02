@@ -12,8 +12,6 @@ mod lib;
 use lib::config::{Config};
 
 fn main() -> Result<(), Box<dyn Error>>{
-
-    // parse command line flags
     let matches = command!()
         .args(&[
             arg!(-d --deploy "Remove existing launch agents, parses config file, then install launch agents
@@ -35,7 +33,7 @@ fn main() -> Result<(), Box<dyn Error>>{
                     "remove_agents",
                     "write_example_config",
                 ])
-                // require one and only one of the above flags
+                // require exactly one of the above flags
                 .multiple(false)
                 .required(true)
         )
@@ -66,7 +64,7 @@ fn main() -> Result<(), Box<dyn Error>>{
         lib::execute(&config)?;
     }
     if matches.get_flag("remove_agents") {
-        lib::remove_agents(&config)?;
+        lib::remove_all_agents(&config)?;
     }
     Ok(())
 }
@@ -79,21 +77,26 @@ fn build_example_config(home_dir: &Path) -> Result<String, Box<dyn Error>> {
         .ok_or("Could not convert launch agent path to string")?;
     Ok(
         format!(
-r#"{{
-    "self_control_path": "/Applications/SelfControl.app/Contents/MacOS/org.eyebeam.SelfControl",   
-    "launch_agents_path": "{}",                          
-    "blocks": [
-        [ 
-        "10:20:00",
-        "12:00:00"
-        ],
 
-        [
-        "17:55:00",
-        "2:00:00"
-        ]
-    ]
-}}"#, {launch_agents_path})
-            )
-}
+r#"
+[paths]
+selfcontrol = "/Applications/SelfControl.app/Contents/MacOS/org.eyebeam.SelfControl"   
+launch_agents = "{}"
+
+[blocks]
+
+* = [
+    (09:30 -> 13:50),
+    (20:00 -> 08:30)
+]
+
+Wed = []
+
+[Sat, Sun] = [
+    (11:00 -> 12:15),
+    (14:30 -> 18:36)
+]
+"# , {launch_agents_path}
+        )
+    )}
 

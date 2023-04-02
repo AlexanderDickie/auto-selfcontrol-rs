@@ -6,8 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-chrono = {version = "0.4.23", features = ["serde"]}
-serde_json = "1.0.91"
-serde = {version = "1.0.152", features = ["derive"]}
+chrono = {version = "0.4.23"}
 core-foundation = "0.9.3"
 clap = { version = "4.1.4", features = ["cargo"] }
+chumsky = "0.9.2"

@@ -1,7 +1,7 @@
 use std::env;
-use std::process::Command;
 use std::io::{self, ErrorKind};
 use std::error::Error;
+use std::process::Command;
 use chrono::{self, Timelike, Local};
 
 pub mod config;
@@ -26,7 +26,7 @@ pub fn deploy(config: &Config) -> ResultE<()> {
     let command = env::current_exe()?;
     let command = command.to_str().ok_or_else(|| "invalid path to this binary")?;
     let args = vec!["--execute"];
-    let block_starts = config.get_block_starts();
+    let block_starts = config.get_all_block_start_times();
     let schedule = LaunchAgentSchedule::Calendar(&block_starts);
 
     let plist = plist::build_launch_agent_plist(
@@ -52,7 +52,7 @@ pub fn execute(config: &Config) -> ResultE<()> {
     SelfControl (depending on current state of SelfControl) until the end of 
     the block
     */
-    let block = config.block_is_active();
+    let block = config.get_active_block();
     if block == None {
         // not within an active block
         return Ok(());
@@ -62,10 +62,10 @@ pub fn execute(config: &Config) -> ResultE<()> {
     let now = Local::now().time();
     let time_to_block_end = utils::duration_between(now, block_end);
 
-    let sc_active = control::selfcontrol_is_active(&config.self_control_path)?;
+    let sc_active = control::selfcontrol_is_active(&config.selfcontrol_path)?;
     if sc_active == None {
         // sc is not active, start sc for duration of block
-        control::selfcontrol_insist_begin_block(&config.self_control_path, block_end)?;
+        control::selfcontrol_insist_begin_block(&config.selfcontrol_path, block_end)?;
         return Ok(());
     }
 
@@ -100,7 +100,7 @@ pub fn execute(config: &Config) -> ResultE<()> {
     Ok(())
 }
 
-pub fn remove_agents(config: &Config) -> ResultE<()> {
+pub fn remove_all_agents(config: &Config) -> ResultE<()> {
     config.remove_agent(TEMP_AGENT)?;
     config.remove_agent(MAIN_AGENT)?;
     Ok(())
