@@ -22,12 +22,6 @@ Mon = [(12:00 -> 15:00)]
     (14:30 -> 18:36)
 ]
 */
-// #[macro_export]
-// macro_rules! label (
-//     ($k:ident) => ({
-//         format!(r#""{}""#, stringify!(ident))
-//     });
-// );
 
 fn parse_config_paths() -> impl Parser<char, ParsedPaths, Error = Simple<char>> {
     let heading = just("paths")
@@ -82,7 +76,7 @@ fn parse_times() -> impl Parser<char, Vec<(NaiveTime, NaiveTime)>, Error = Simpl
         .delimited_by(
             just('('),
             just(')'),
-        ).labelled("[.. , ..]");
+        ).labelled("(xx:xx -> xx:xx)");
 
     time_pair
         .padded()
