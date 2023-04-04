@@ -1,4 +1,6 @@
+use std::collections::HashSet;
 use std::error::Error;
+use std::fmt::{Debug, Formatter};
 use std::{path::{Path, PathBuf}, process::Command, io::ErrorKind, fmt::Display};
 
 use chrono::{self, NaiveTime, Local, Weekday};
@@ -8,13 +10,13 @@ use chrono::Datelike;
 
 mod parse;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 enum Day {
     Default,
     Weekday(Weekday),
 }
-type Blocks = Vec<(Vec<Day>, Vec<(NaiveTime, NaiveTime)>)>;
-type Paths = (String, String);
+type ParsedBlocks = Vec<(Vec<Day>, Vec<(NaiveTime, NaiveTime)>)>;
+type ParsedPaths = (String, String);
 
 use chumsky::prelude::*;
 pub struct Config {
@@ -26,22 +28,28 @@ pub struct Config {
 impl Config {
     pub fn build(config_path: &Path) -> ResultE<Self> {
         let config_file = fs::read_to_string(config_path)?;
-        let (paths, blocks): (Paths, Blocks) = parse::parse_config().parse(config_file).unwrap();
-        // check the config contains only 1 sequence of blocks for the present in config weekdays
-        let days_freq_map = blocks
+        let (paths, blocks): (ParsedPaths, ParsedBlocks) = parse::parse_config()
+            .parse(config_file)
+            .map_err(|err| ConfigError::ParseError(err.into()))?;
+        // check each present weekday has at most one block sequence defined for it
+        let duplicate_days = blocks
             .iter()
-            .fold(HashMap::new(), |mut acc, (days, _)| {
+            .fold((HashSet::<&Day>::new(), HashSet::new()), |mut acc, (days, _)| {
+                let (seen, duplicates) = &mut acc;
                 for day in days {
-                    let v = acc.entry(day).or_insert(0);
-                    *v += 1;
+                    if seen.contains(&day) {
+                        duplicates.insert(*day);
+                    }
+                    seen.insert(&day);
                 }
                 acc
-            });
-        if days_freq_map
-            .into_iter()
-            .filter(|(_, freq)| *freq != 1)
-            .count() > 1 {
-            return Err(ConfigError::ManyDayDefinitions.into());
+            }).1.into_iter().collect::<Vec<_>>();
+        if duplicate_days.len() > 0 {
+            return Err(ConfigError::ManyDayDefinitions(duplicate_days.clone()).into());
+        }
+        // validate each block sequence present
+        for (days, block_seq) in blocks.iter() {
+            Self::validate_block_sequence(days, block_seq)?;
         }
         // build hashmap of Day -> block sequence
         let blocks_map = blocks
@@ -52,10 +60,6 @@ impl Config {
                 }
                 acc
             });
-        // validate block sequence for each day
-        for (k, v) in blocks_map.iter() {
-            Self::validate_block_sequence(k, v)?;
-        }
         // build paths 
         let selfcontrol_path = PathBuf::from(paths.0);
         let launch_agents_path = PathBuf::from(paths.1);
@@ -75,27 +79,27 @@ impl Config {
             Err(_) => Ok(()),
             Ok(bool) => match bool {
                 true => Ok(()),
-                false => Err(ConfigError::InvalidPath.into())
+                false => Err(ConfigError::InvalidPath(path.clone()).into())
             },
         }
 
     }
-    fn validate_block_sequence(key: &Day, blocks: &Vec<(NaiveTime, NaiveTime)>) -> ResultE<()> {
-        if blocks.len() == 1 || blocks.len() == 0{
+    fn validate_block_sequence(days: &Vec<Day>, block_seq: &Vec<(NaiveTime, NaiveTime)>) -> ResultE<()> {
+        if block_seq.len() == 1 || block_seq.len() == 0{
             return Ok(());
         }
         // if the latest block crosses midnight, check if it overlaps with earliest block
-        let mut blocks = blocks.clone();
+        let mut blocks = block_seq.clone();
         blocks.sort_by(|a, b| (&a.0).partial_cmp(&b.0).unwrap());
         let first_block = blocks.first().unwrap();
         let last_block = blocks.last().unwrap();
         if last_block.1 < last_block.0 && last_block.1 >= first_block.0 {
-            return Err(ConfigError::OverlappingBlocks.into());
+            return Err(ConfigError::OverlappingBlocks(days.clone()).into());
         }
         // check no other blocks overlap
         let overlapping = blocks.windows(2).filter(|pair| pair[0].1 >= pair[1].0);
         if overlapping.count() > 0 {
-            return Err(ConfigError::OverlappingBlocks.into());
+            return Err(ConfigError::OverlappingBlocks(days.clone()).into());
         }
         Ok(())
     }
@@ -176,16 +180,33 @@ impl Config {
 
 #[derive(Debug)]
 enum ConfigError {
-    OverlappingBlocks,
-    ManyDayDefinitions,
-    InvalidPath,
+    ParseError(ParseError),
+    OverlappingBlocks(Vec<Day>),
+    ManyDayDefinitions(Vec<Day>),
+    InvalidPath(PathBuf),
+}
+#[derive(Debug)]
+struct ParseError (String);
+impl From<Vec<Simple<char>>> for ParseError {
+    fn from(errs: Vec<Simple<char>>) -> Self {
+        let err = &errs[0];
+        let msg = if let Some(label) = err.label() {
+            format!("Error when parsing {}: {}", label, err)
+        } else {
+            format!("Error when parsing: {}", err)
+        };
+        ParseError(msg)
+    }
 }
 impl Display for ConfigError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ConfigError::OverlappingBlocks => write!(f, "overlapping blocks specified in config"),
-            ConfigError::ManyDayDefinitions => write!(f, "There are multiple blocks definitions for a certain day"),
-            ConfigError::InvalidPath => write!(f, "Invalid path: "),
+            ConfigError::ParseError(ParseError(msg)) => write!(f, "{}", msg),
+            ConfigError::OverlappingBlocks(days) => write!(f, "overlapping blocks specified in \
+                config for days {:?}", days),
+            ConfigError::ManyDayDefinitions(days) => write!(f, "There are multiple blocks definitions \
+                for the days {:?}", days),
+            ConfigError::InvalidPath(path) => write!(f, "The path {:?} is invaid", path),
         }
     }
 }

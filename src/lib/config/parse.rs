@@ -1,7 +1,7 @@
 use chumsky::prelude::*;
 use chrono::NaiveTime;
 use chrono::Weekday;
-use super::{Day, Blocks, Paths};
+use super::{Day, ParsedBlocks, ParsedPaths};
 
 /*
 [paths]
@@ -22,30 +22,45 @@ Mon = [(12:00 -> 15:00)]
     (14:30 -> 18:36)
 ]
 */
-fn parse_config_paths() -> impl Parser<char, Paths, Error = Simple<char>> {
+// #[macro_export]
+// macro_rules! label (
+//     ($k:ident) => ({
+//         format!(r#""{}""#, stringify!(ident))
+//     });
+// );
+
+fn parse_config_paths() -> impl Parser<char, ParsedPaths, Error = Simple<char>> {
     let heading = just("paths")
+        .padded()
         .delimited_by(
-            just('[').padded(),
-            just(']').padded()
-    );
+            just('['),
+            just(']')
+    ).labelled("[path]");
+
 
     let str = just('"')
         .ignore_then(none_of('"').repeated())
         .then_ignore(just('"'))
-        .collect::<String>();
+        .collect::<String>()
+        .labelled(r#""path...""#);
 
     let path_ident = |name: String| {
         just(name.clone())
             .padded()
-            .ignore_then(just('=').padded())
+            .ignore_then(just('=').padded().labelled("="))
             .then(str.clone())
             .map(|(_, s)| s)
     };
 
     heading
         .padded()
-        .ignore_then(path_ident("selfcontrol".into()).padded())
-        .then(path_ident("launch_agents".into()).padded())
+        .ignore_then(path_ident("selfcontrol".to_string()).labelled("selfcontrol").padded())
+        .then(path_ident("launch_agents".to_string()).labelled("launch_agents").padded())
+        .or(
+            path_ident("launch_agents".to_string()).labelled("launch_agents").padded()
+            .then(path_ident("selfcontrol".to_string()).labelled("selfcontrol").padded())
+            .map(|(la, sc)| (sc, la))
+        )
 }
 
 fn parse_times() -> impl Parser<char, Vec<(NaiveTime, NaiveTime)>, Error = Simple<char>> {
@@ -57,7 +72,8 @@ fn parse_times() -> impl Parser<char, Vec<(NaiveTime, NaiveTime)>, Error = Simpl
         .then(one_of("012345"))
         .then(digit.clone())
         .map(|(((a,b),c),d)| format!("{}{}:{}{}", a,b,c,d))
-        .map(|s| NaiveTime::parse_from_str(&s, "%H:%M").unwrap());
+        .map(|s| NaiveTime::parse_from_str(&s, "%H:%M").unwrap())
+        .labelled("xx:xx");
 
     let time_pair = time.clone()
         .padded()
@@ -66,7 +82,7 @@ fn parse_times() -> impl Parser<char, Vec<(NaiveTime, NaiveTime)>, Error = Simpl
         .delimited_by(
             just('('),
             just(')'),
-        );
+        ).labelled("[.. , ..]");
 
     time_pair
         .padded()
@@ -75,13 +91,13 @@ fn parse_times() -> impl Parser<char, Vec<(NaiveTime, NaiveTime)>, Error = Simpl
 }
 
 
-fn parse_config_blocks() -> impl Parser<char, Blocks, Error = Simple<char>> {
+fn parse_config_blocks() -> impl Parser<char, ParsedBlocks, Error = Simple<char>> {
     let heading = just("blocks")
         .padded()
         .delimited_by(
             just('['),
             just(']'),
-    );
+    ).labelled("[blocks]");
 
     let day = choice((
         just("*").to(Day::Default),
@@ -92,12 +108,13 @@ fn parse_config_blocks() -> impl Parser<char, Blocks, Error = Simple<char>> {
         just("Fri").to(Day::Weekday(Weekday::Fri)),
         just("Sat").to(Day::Weekday(Weekday::Sat)),
         just("Sun").to(Day::Weekday(Weekday::Sun)),
-    ));
+    )).labelled("a day identifier");
 
     let key = day.clone().padded()
         .separated_by(just(','))
         .delimited_by(just('['), just(']'))
-        .or(day.map(|day| vec![day]));
+        .or(day.map(|day| vec![day]))
+        .labelled("[day_ident1, day_ident2, ..] or day_ident");
 
 
     heading.padded()
@@ -109,7 +126,7 @@ fn parse_config_blocks() -> impl Parser<char, Blocks, Error = Simple<char>> {
         )
 }
 
-pub fn parse_config() -> impl Parser<char, (Paths, Blocks), Error = Simple<char>> {
+pub fn parse_config() -> impl Parser<char, (ParsedPaths, ParsedBlocks), Error = Simple<char>> {
     parse_config_paths()
         .padded()
         .then(parse_config_blocks())
@@ -117,7 +134,7 @@ pub fn parse_config() -> impl Parser<char, (Paths, Blocks), Error = Simple<char>
             parse_config_blocks().padded()
             .then(parse_config_paths())
             .map(|(p, b)| (b, p))
-        )
+        ).then_ignore(end())
 }
 
 #[cfg(test)]

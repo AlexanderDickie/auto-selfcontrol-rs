@@ -7,11 +7,12 @@ use clap::{
     arg, 
     command,
 };
+use main_error::MainError;
 
 mod lib;
 use lib::config::{Config};
 
-fn main() -> Result<(), Box<dyn Error>>{
+fn main() -> Result<(), MainError>{
     let matches = command!()
         .args(&[
             arg!(-d --deploy "Remove existing launch agents, parses config file, then install launch agents
@@ -61,7 +62,10 @@ fn main() -> Result<(), Box<dyn Error>>{
         lib::deploy(&config)?;
     }
     if matches.get_flag("execute") {
-        lib::execute(&config)?;
+        match lib::execute(&config) {
+            Ok(_) => (), 
+            Err(e) => println!("{:?}", e),
+        }
     }
     if matches.get_flag("remove_agents") {
         lib::remove_all_agents(&config)?;

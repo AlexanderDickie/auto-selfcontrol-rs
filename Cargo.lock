@@ -30,6 +30,7 @@ dependencies = [
  "chumsky",
  "clap",
  "core-foundation",
+ "main_error",
 ]
 
 [[package]]
@@ -311,6 +312,12 @@ checksum = "abb12e687cfb44aa40f41fc3978ef76448f9b6038cad6aef4259d3c095a2382e"
 dependencies = [
  "cfg-if",
 ]
+
+[[package]]
+name = "main_error"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "155db5e86c6e45ee456bf32fad5a290ee1f7151c2faca27ea27097568da67d1a"
 
 [[package]]
 name = "num-integer"
