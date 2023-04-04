@@ -10,7 +10,7 @@ Schedule automatic activations of [SelfControl](https://github.com/SelfControlAp
 
 ## Usage + how it works
 The cli accepts 4 commands:
-- **- -write_example_config** <br> Writes an example configuration file to ~/.config/auto-self-control-rs/config.json.
+- **- -write_example_config** <br> Writes an example configuration file to ~/.config/auto-self-control-rs/config.aoml.
 - **- -remove_agents** <br> Removes all launch agents installed by the program. They live in ~/Library/LaunchAgents/ .
  - **- -deploy** <br> Parses the config file then installs a launch agent which will call - -execute on this program at the start times of the blocks specified in the config.
  - **- -execute** <br> If the current time is within a block, activates SelfControl for the duration remaining until the block ends.
@@ -30,7 +30,7 @@ The config file contains a path to the SelfControl app and a path to the LaunchA
     
     ./auto-selfcontrol-rs --write_example_config
     
-    // now edit the config at ~/.config/auto-selfcontrol-rs/config.json to your liking
+    // now edit the config at ~/.config/auto-selfcontrol-rs/config.aoml to your liking
     
     ./auto-selfcontrol-rs --deploy
     
@@ -44,7 +44,7 @@ The config file contains a path to the SelfControl app and a path to the LaunchA
     
     ./auto-selfcontrol-rs --write_example_config
     
-    // now edit the config at ~/.config/auto-selfcontrol-rs/config.json to your liking
+    // now edit the config at ~/.config/auto-selfcontrol-rs/config.aoml to your liking
     
     ./auto-selfcontrol-rs --deploy
     
