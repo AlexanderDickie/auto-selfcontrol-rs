@@ -62,10 +62,7 @@ fn main() -> Result<(), MainError>{
         lib::deploy(&config)?;
     }
     if matches.get_flag("execute") {
-        match lib::execute(&config) {
-            Ok(_) => (), 
-            Err(e) => println!("{:?}", e),
-        }
+        lib::execute(&config)?;
     }
     if matches.get_flag("remove_agents") {
         lib::remove_all_agents(&config)?;
