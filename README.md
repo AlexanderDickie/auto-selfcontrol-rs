@@ -23,7 +23,7 @@ The config file contains a path to the SelfControl app and a path to the LaunchA
 ### Intel Macs:
 
     curl -s -O -L \
-    https://github.com/AlexanderDickie/auto-selfcontrol-rs/releases/download/v1/auto-selfcontrol-rs.x86_64-apple-darwin \ 
+    https://github.com/AlexanderDickie/auto-selfcontrol-rs/releases/download/v2/auto-selfcontrol-rs.x86_64-apple-darwin \ 
     mv auto-selfcontrol-rs.x86_64-apple-darwin auto-selfcontrol-rs 
     
     chmod +x auto-selfcontrol-rs
@@ -37,7 +37,7 @@ The config file contains a path to the SelfControl app and a path to the LaunchA
 ### Apple Silicon Macs:
 
     curl -s -O -L \
-    https://github.com/AlexanderDickie/auto-selfcontrol-rs/releases/download/v1/auto-selfcontrol-rs.aarch64-apple-darwin \ 
+    https://github.com/AlexanderDickie/auto-selfcontrol-rs/releases/download/v2/auto-selfcontrol-rs.aarch64-apple-darwin \ 
     mv auto-selfcontrol-rs.aarch64-apple-darwin auto-selfcontrol-rs 
     
     chmod +x auto-selfcontrol-rs
