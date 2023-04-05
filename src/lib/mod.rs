@@ -39,10 +39,10 @@ pub fn deploy(config: &Config) -> ResultE<()> {
     config.install_agent(MAIN_AGENT, &plist)?;
 
     // we may be now be in an active block- so call execute on this binary
-    let this_binary = std::env::current_exe()?;
-    Command::new(&this_binary)
-        .arg("--execute")
-        .output()?;
+    // let this_binary = std::env::current_exe()?;
+    // Command::new(&this_binary)
+    //     .arg("--execute")
+    //     .output()?;
     Ok(())
 }
 
