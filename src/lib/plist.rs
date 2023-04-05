@@ -34,7 +34,7 @@ fn build_plist_commands(command: &str, args: &Vec<&str>) -> String {
         .map(|arg| format!(
 r#"        <string>{}</string>"#
             , arg))
-        .collect::<Vec<String>>()
+        .collect::<Vec<_>>()
         .join("\n");
 
     format!(
@@ -46,6 +46,7 @@ r#"    <key>ProgramArguments</key>
 ,command, args)
 }
 
+#[allow(dead_code)]
 pub enum LaunchAgentSchedule<'a> {
     Calendar(&'a Vec<NaiveTime>), 
     Periodic(Duration), 
@@ -63,21 +64,24 @@ r#"    <key>StartInterval</key>
             let start_times = start_times
                 .iter()
                 .map(|time| format!(
-r#"    <dict>
-        <key>Minute</key>
-        <integer>{}</integer>
-        <key>Hour</key>
-        <integer>{}</integer>
-    </dict>"#, 
+r#"       <dict>
+            <key>Minute</key>
+            <integer>{}</integer>
+            <key>Hour</key>
+            <integer>{}</integer>
+        </dict>"#, 
                 time.minute(), time.hour()))
-                .collect::<Vec<String>>()
+                .collect::<Vec<_>>()
                 .join("\n");
 
-
-"    <key>StartCalendarInterval</key>\n".to_string() + &start_times
+            vec![
+                "    <key>StartCalendarInterval</key>\n".to_string(),
+                "   <array>".to_string(),
+                start_times,
+                "   </array>".to_string(),
+            ].join("\n")
         }
     };
-
     // if agent is scheduled to execute when computer is shut down, it will not when next online- run at load 
     // to mitigate this
     if run_at_load {
@@ -86,7 +90,7 @@ r#"    <dict>
     <key>RunAtLoad</key>
     <true/>"#.to_string();
     } else {
-    return timings;
+        return timings;
     }
 }
 
