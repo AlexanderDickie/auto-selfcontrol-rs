@@ -24,7 +24,7 @@ fn main() -> Result<(), MainError>{
             arg!(-r --remove_agents "Remove any launch agent installed by this program"),
 
             arg!(-w --write_example_config "Writes an example configuration file to \
-                ~/.config/auto-self-control-rs/config.aoml"),
+                ~/.config/auto-selfcontrol-rs/config.aoml"),
         ])
         .group(
             ArgGroup::new("commands")
@@ -46,7 +46,7 @@ fn main() -> Result<(), MainError>{
     let home_dir = Path::new(&home_dir);
     let config_dir = home_dir 
         .join(".config")
-        .join("auto-self-control-rs/");
+        .join("auto-selfcontrol-rs/");
     // if path to config does not exist, create it 
     fs::create_dir_all(&config_dir)?;
     let config_path = config_dir.join("config.aoml");

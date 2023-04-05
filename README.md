@@ -10,7 +10,7 @@ Schedule automatic activations of [SelfControl](https://github.com/SelfControlAp
 
 ## Usage + how it works
 The cli accepts 4 commands:
-- **- -write_example_config** <br> Writes an example configuration file to ~/.config/auto-self-control-rs/config.aoml.
+- **- -write_example_config** <br> Writes an example configuration file to ~/.config/auto-selfcontrol-rs/config.aoml.
 - **- -remove_agents** <br> Removes all launch agents installed by the program. They live in ~/Library/LaunchAgents/ .
  - **- -deploy** <br> Parses the config file then installs a launch agent which will call - -execute on this program at the start times of the blocks specified in the config.
  - **- -execute** <br> If the current time is within a block, activates SelfControl for the duration remaining until the block ends.
