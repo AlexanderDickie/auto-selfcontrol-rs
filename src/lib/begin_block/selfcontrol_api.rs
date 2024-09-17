@@ -37,7 +37,7 @@ pub async fn start_sc_until(
         .kill_on_drop(true)
         .output();
 
-    let result = tokio::time::timeout(tokio::time::Duration::from_secs(5), start_self_control).await;
+    let result = tokio::time::timeout(tokio::time::Duration::from_secs(10), start_self_control).await;
 
     let self_control_output = match result {
         Err(_) => return Err(SelfControlError::NoInputTimeout.into()),
