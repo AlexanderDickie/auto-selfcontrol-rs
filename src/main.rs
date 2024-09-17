@@ -1,58 +1,56 @@
-use std::env;
-use std::path::Path;
-use std::error::Error;
-use std::fs;
-use clap::{
-    ArgGroup,
-    arg, 
-    command,
-};
+use chrono::Duration;
+use clap::{arg, command, Arg, ArgGroup};
 use main_error::MainError;
+use std::{env, fs, path::Path};
+use rpassword;
 
 mod lib;
-use lib::config::{Config};
+use lib::config::{Config, self};
 
-fn main() -> Result<(), MainError>{
+fn main() -> Result<(), MainError> {
     let matches = command!()
         .args(&[
-            arg!(-d --deploy "Remove existing launch agents, parses config file, then install launch agents
+            arg!(-d --deploy "Remove existing auto-self-control launch agent, parses config file, then install launch agents
                 with respect to your config"),
 
             arg!(-e --execute "If we are in currently in an active block, activates SelfControlApp until \
                 the block ends"),
 
-            arg!(-r --remove_agents "Remove any launch agent installed by this program"),
-
             arg!(-w --write_example_config "Writes an example configuration file to \
                 ~/.config/auto-selfcontrol-rs/config.aoml"),
+
+            arg!(-p --set_keychain_password "Store the current MacOs user's password in keychain, which can then be used to automaticaly input into the SelfControl helper."),
+
+            Arg::new("mins")
+                .help("Start selfcontrol for a specified number of minutes")
+                .short('s')
+                .long("start_self_control")
+                .num_args(1)
+                .value_parser(|mins: &str| mins.parse::<usize>()),
         ])
         .group(
             ArgGroup::new("commands")
                 .args([
                     "deploy",
                     "execute",
-                    "remove_agents",
                     "write_example_config",
+                    "mins",
+                    "set_keychain_password"
                 ])
-                // require exactly one of the above flags
                 .multiple(false)
                 .required(true)
         )
         .get_matches();
 
-    // build path to config file
-    let home_dir = env::var_os("HOME")
-        .ok_or_else(|| "HOME environment variable not set")?;
+    let home_dir = env::var_os("HOME").ok_or_else(|| "HOME environment variable not set")?;
     let home_dir = Path::new(&home_dir);
-    let config_dir = home_dir 
-        .join(".config")
-        .join("auto-selfcontrol-rs/");
-    // if path to config does not exist, create it 
+    let config_dir = home_dir.join(".config").join("auto-selfcontrol-rs/");
+
     fs::create_dir_all(&config_dir)?;
-    let config_path = config_dir.join("config.aoml");
+    let config_path = config_dir.join("config.yaml");
 
     if matches.get_flag("write_example_config") {
-        let example_config = build_example_config(home_dir)?;
+        let example_config = config::build_example_config();
         fs::write(&config_path, example_config)?;
         return Ok(());
     }
@@ -64,40 +62,15 @@ fn main() -> Result<(), MainError>{
     if matches.get_flag("execute") {
         lib::execute(&config)?;
     }
-    if matches.get_flag("remove_agents") {
-        lib::remove_all_agents(&config)?;
+    if matches.get_flag("set_keychain_password") {
+        println!("Enter your current login user's password to store in keychain:");
+        let input = rpassword::read_password()?;
+        config.auto_password_input.set_pswd(input.trim())?;
+        println!("Success!");
+    }
+   
+    if let Some(mins) = matches.get_one::<usize>("mins") {
+        lib::execute_for_duration(&config, Duration::minutes(*mins as i64))?;
     }
     Ok(())
 }
-
-fn build_example_config(home_dir: &Path) -> Result<String, Box<dyn Error>> {
-    let launch_agents_path = home_dir
-        .join("Library/LaunchAgents/");
-    let launch_agents_path = launch_agents_path
-        .to_str()
-        .ok_or("Could not convert launch agent path to string")?;
-    Ok(
-        format!(
-
-r#"
-[paths]
-selfcontrol = "/Applications/SelfControl.app/Contents/MacOS/org.eyebeam.SelfControl"   
-launch_agents = "{}"
-
-[blocks]
-
-* = [
-    (09:30 -> 13:50),
-    (20:00 -> 08:30)
-]
-
-Wed = []
-
-[Sat, Sun] = [
-    (11:00 -> 12:15),
-    (14:30 -> 18:36)
-]
-"# , {launch_agents_path}
-        )
-    )}
-
